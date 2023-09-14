@@ -458,7 +458,7 @@ SourceManager::AllocateLoadedSLocEntries(unsigned NumSLocEntries,
       CurrentLoadedOffset - TotalSize < NextLocalOffset) {
     return std::make_pair(0, 0);
   }
-  LoadedSLocEntryTable.resize(LoadedSLocEntryTable.size() + NumSLocEntries);
+  LoadedSLocEntryTable.expand(LoadedSLocEntryTable.size() + NumSLocEntries);
   SLocEntryLoaded.resize(LoadedSLocEntryTable.size());
   CurrentLoadedOffset -= TotalSize;
   int ID = LoadedSLocEntryTable.size();
@@ -2344,11 +2344,11 @@ SourceManager::MemoryBufferSizes SourceManager::getMemoryBufferSizes() const {
 }
 
 size_t SourceManager::getDataStructureSizes() const {
-  size_t size = llvm::capacity_in_bytes(MemBufferInfos)
-    + llvm::capacity_in_bytes(LocalSLocEntryTable)
-    + llvm::capacity_in_bytes(LoadedSLocEntryTable)
-    + llvm::capacity_in_bytes(SLocEntryLoaded)
-    + llvm::capacity_in_bytes(FileInfos);
+  size_t size = llvm::capacity_in_bytes(MemBufferInfos) +
+                llvm::capacity_in_bytes(LocalSLocEntryTable) +
+                llvm::capacity_in_bytes(LoadedSLocEntryTable.materialised()) +
+                llvm::capacity_in_bytes(SLocEntryLoaded) +
+                llvm::capacity_in_bytes(FileInfos);
 
   if (OverriddenFilesInfo)
     size += llvm::capacity_in_bytes(OverriddenFilesInfo->OverriddenFiles);

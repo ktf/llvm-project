@@ -3260,7 +3260,7 @@ llvm::Error ASTReader::ReadASTBlock(ModuleFile &F,
           std::make_pair(LocalBaseTypeIndex,
                          F.BaseTypeIndex - LocalBaseTypeIndex));
 
-        TypesLoaded.resize(TypesLoaded.size() + F.LocalNumTypes);
+        TypesLoaded.expand(TypesLoaded.size() + F.LocalNumTypes);
       }
       break;
     }
@@ -3290,7 +3290,7 @@ llvm::Error ASTReader::ReadASTBlock(ModuleFile &F,
         // module.
         F.GlobalToLocalDeclIDs[&F] = LocalBaseDeclID;
 
-        DeclsLoaded.resize(DeclsLoaded.size() + F.LocalNumDecls);
+        DeclsLoaded.expand(DeclsLoaded.size() + F.LocalNumDecls);
       }
       break;
     }
@@ -7944,9 +7944,10 @@ void ASTReader::PrintStats() {
   std::fprintf(stderr, "*** AST File Statistics:\n");
 
   unsigned NumTypesLoaded =
-      TypesLoaded.size() - llvm::count(TypesLoaded, QualType());
+      TypesLoaded.size() - llvm::count(TypesLoaded.materialised(), QualType());
   unsigned NumDeclsLoaded =
-      DeclsLoaded.size() - llvm::count(DeclsLoaded, (Decl *)nullptr);
+      DeclsLoaded.size() -
+      llvm::count(DeclsLoaded.materialised(), (Decl *)nullptr);
   unsigned NumIdentifiersLoaded =
       IdentifiersLoaded.size() -
       llvm::count(IdentifiersLoaded, (IdentifierInfo *)nullptr);
