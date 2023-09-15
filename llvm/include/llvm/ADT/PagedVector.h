@@ -15,6 +15,9 @@
 
 #include <vector>
 
+// A vector that allocates memory in pages.
+// Order is kept, but memory is allocated only when one element of the page is
+// accessed.
 // Notice that this does not have iterators, because if you
 // have iterators it probably means you are going to touch
 // all the memory in any case, so better use a std::vector in
@@ -23,17 +26,13 @@ template <typename T, int PAGE_SIZE = 1024 / sizeof(T)> class PagedVector {
   size_t Size = 0;
   // Index of where to find a given page in the data
   mutable std::vector<int> Lookup;
-  // Actual data
+  // Actual page data
   mutable std::vector<T> Data;
 
 public:
-  // Add a range to the vector.
-  // When vector is accessed, it will call the callback to fill the range
-  // with data.
-
   // Lookup an element at position i.
-  // If the given range is not filled, it will be filled.
-  // If the given range is filled, return the element.
+  // If the associated page is not filled, it will be filled with default
+  // constructed elements. If the associated page is filled, return the element.
   T &operator[](int Index) const { return at(Index); }
 
   T &at(int Index) const {
@@ -83,6 +82,7 @@ public:
 
   // Return true if the vector is empty
   bool empty() const { return Size == 0; }
+
   /// Clear the vector
   void clear() {
     Size = 0;
