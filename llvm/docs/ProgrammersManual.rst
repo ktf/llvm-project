@@ -1625,7 +1625,7 @@ SmallVector has grown a few other minor advantages over std::vector, causing
    and is no longer "private to the implementation". A name like
    ``SmallVectorHeader`` might be more appropriate.
 
-.. _dss_smallvector:
+.. _dss_pagedvector:
 
 llvm/ADT/PagedVector.h
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -1634,7 +1634,7 @@ llvm/ADT/PagedVector.h
 of type Type when the first element of a page is accessed via the ``operator[]`` or the ``at()``
 method.  This is useful for the case in which the number of elements is known in advance and 
 their actual initialization is expensive and sparse so that it's only done lazily when the element is 
-accessed. Typical cases for this are the ASTReader::TypesLoaded and ASTReader::DeclsLoaded containers.
+accessed. When the number of used pages is small significant memory savings can be achieved.
 
 The main advantage is that a PagedVector allows to delay the actual allocation of the page until it's needed,
 at the extra cost of one integer per page and one extra indirection when accessing elements with their positional

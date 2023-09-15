@@ -19,8 +19,9 @@ namespace llvm {
 // A vector that allocates memory in pages.
 // Order is kept, but memory is allocated only when one element of the page is
 // accessed. This introduces a level of indirection, but it is useful when you
-// have a sparsely initialised vector like for the case of
-// ASTReader::DeclsLoaded or ASTReader::TypesLoaded.
+// have a sparsely initialised vector where the full size is allocated upfront
+// with the default constructor and elements are initialised later, on first
+// access.
 //
 // Notice that this does not have iterators, because if you
 // have iterators it probably means you are going to touch
