@@ -7944,9 +7944,11 @@ void ASTReader::PrintStats() {
   std::fprintf(stderr, "*** AST File Statistics:\n");
 
   unsigned NumTypesLoaded =
-      llvm::count_if(TypesLoaded.materialised(), [](QualType& item) { return item != QualType(); });
+      llvm::count_if(TypesLoaded.materialised(),
+                     [](QualType const &item) { return item != QualType(); });
   unsigned NumDeclsLoaded =
-      llvm::count_if(DeclsLoaded.materialised(), [](Decl* item) { return item != (Decl *)nullptr);
+      llvm::count_if(DeclsLoaded.materialised(),
+                     [](Decl const *item) { return item != (Decl *)nullptr; });
   unsigned NumIdentifiersLoaded =
       IdentifiersLoaded.size() -
       llvm::count(IdentifiersLoaded, (IdentifierInfo *)nullptr);

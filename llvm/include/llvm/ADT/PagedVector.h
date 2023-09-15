@@ -41,12 +41,14 @@ template <typename T, int PAGE_SIZE = 1024 / sizeof(T)> class PagedVector {
 
 public:
   // Lookup an element at position Index.
-  T &operator[](int Index) const { return at(Index); }
+  T &operator[](size_t Index) const { return at(Index); }
 
   // Lookup an element at position i.
   // If the associated page is not filled, it will be filled with default
   // constructed elements. If the associated page is filled, return the element.
-  T &at(int Index) const {
+  T &at(size_t Index) const {
+    assert(Index < Size);
+    assert(Index / PAGE_SIZE < Lookup.size());
     auto &PageId = Lookup[Index / PAGE_SIZE];
     // If the range is not filled, fill it
     if (PageId == -1) {
@@ -59,8 +61,13 @@ public:
         Data[I + OldSize] = T();
       }
     }
+    // Calculate the actual position in the Data vector
+    // by taking the start of the page and adding the offset
+    // in the page.
+    size_t StoreIndex = Index % PAGE_SIZE + PAGE_SIZE * PageId;
     // Return the element
-    return Data[Index % PAGE_SIZE + PAGE_SIZE * PageId];
+    assert(StoreIndex < Data.size());
+    return Data[StoreIndex];
   }
 
   // Return the capacity of the vector. I.e. the maximum size it can be expanded
@@ -79,7 +86,6 @@ public:
     // You cannot shrink the vector, otherwise
     // one would have to invalidate contents which is expensive and
     // while giving the false hope that the resize is cheap.
-    assert(NewSize >= Size);
     if (NewSize <= Size) {
       return;
     }
