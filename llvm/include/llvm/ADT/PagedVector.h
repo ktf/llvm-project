@@ -28,12 +28,13 @@ namespace llvm {
 // have iterators it probably means you are going to touch
 // all the memory in any case, so better use a std::vector in
 // the first place.
-template <typename T, int PAGE_SIZE = 1024 / sizeof(T)> class PagedVector {
+template <typename T, std::size_t PAGE_SIZE = 1024 / sizeof(T)>
+class PagedVector {
   // The actual number of element in the vector which can be accessed.
   std::size_t Size = 0;
   // The position of the initial element of the page in the Data vector.
   // Pages are allocated contiguously in the Data vector.
-  mutable std::vector<int> Lookup;
+  mutable std::vector<int> PageToDataIdx;
   // Actual page data. All the page elements are added to this vector on the
   // first access of any of the elements of the page. Elements default
   // constructed and elements of the page are stored contiguously. The oder of
@@ -49,18 +50,15 @@ public:
   // constructed elements. If the associated page is filled, return the element.
   T &at(std::size_t Index) const {
     assert(Index < Size);
-    assert(Index / PAGE_SIZE < Lookup.size());
-    auto &PageId = Lookup[Index / PAGE_SIZE];
+    assert(Index / PAGE_SIZE < PageToDataIdx.size());
+    auto &PageId = PageToDataIdx[Index / PAGE_SIZE];
     // If the range is not filled, fill it
     if (PageId == -1) {
-      int OldSize = Data.size();
+      std::size_t OldSize = Data.size();
       PageId = OldSize / PAGE_SIZE;
-      // Allocate the memory
+      // Allocate the memory and fill it with default constructed elements
+      // by resizing the vector.
       Data.resize(OldSize + PAGE_SIZE);
-      // Fill the whole capacity with empty elements
-      for (int I = 0; I < PAGE_SIZE; ++I) {
-        Data[I + OldSize] = T();
-      }
     }
     // Calculate the actual position in the Data vector
     // by taking the start of the page and adding the offset
@@ -73,7 +71,7 @@ public:
 
   // Return the capacity of the vector. I.e. the maximum size it can be expanded
   // to with the expand method without allocating more pages.
-  std::size_t capacity() const { return Lookup.size() * PAGE_SIZE; }
+  std::size_t capacity() const { return PageToDataIdx.size() * PAGE_SIZE; }
 
   // Return the size of the vector. I.e. the maximum index that can be
   // accessed, i.e. the maximum value which was used as argument of the
@@ -104,11 +102,11 @@ public:
     if (Remainder) {
       Pages += 1;
     }
-    assert(Pages > Lookup.size());
+    assert(Pages > PageToDataIdx.size());
     // We use -1 to indicate that a page has not been allocated yet.
     // This cannot be 0, because 0 is a valid page id.
     // We use -1 instead of a separate bool to avoid wasting space.
-    Lookup.resize(Pages, -1);
+    PageToDataIdx.resize(Pages, -1);
     Size = NewSize;
   }
 
@@ -119,7 +117,7 @@ public:
   /// lookup index and reset the size.
   void clear() {
     Size = 0;
-    Lookup.clear();
+    PageToDataIdx.clear();
     Data.clear();
   }
 
