@@ -17,24 +17,32 @@
 
 // A vector that allocates memory in pages.
 // Order is kept, but memory is allocated only when one element of the page is
-// accessed.
+// accessed. This introduces a level of indirection, but it is useful when you
+// have a sparsely initialised vector like for the case of ASTReader::DeclsLoaded
+// or ASTReader::TypesLoaded.
+//
 // Notice that this does not have iterators, because if you
 // have iterators it probably means you are going to touch
 // all the memory in any case, so better use a std::vector in
 // the first place.
 template <typename T, int PAGE_SIZE = 1024 / sizeof(T)> class PagedVector {
+  // The actual number of element in the vector which can be accessed.
   size_t Size = 0;
-  // Index of where to find a given page in the data
+  // The position of the initial element of the page in the Data vector.
+  // Pages are allocated contiguously in the Data vector.
   mutable std::vector<int> Lookup;
-  // Actual page data
+  // Actual page data. All the page elements are added to this vector on the
+  // first access of any of the elements of the page. Elements default constructed
+  // and elements of the page are stored contiguously. The oder of the elements however
+  // depends on the order of access of the pages.
   mutable std::vector<T> Data;
-
 public:
+  // Lookup an element at position Index.
+  T &operator[](int Index) const { return at(Index); }
+
   // Lookup an element at position i.
   // If the associated page is not filled, it will be filled with default
   // constructed elements. If the associated page is filled, return the element.
-  T &operator[](int Index) const { return at(Index); }
-
   T &at(int Index) const {
     auto &PageId = Lookup[Index / PAGE_SIZE];
     // If the range is not filled, fill it
@@ -52,30 +60,44 @@ public:
     return Data[Index % PAGE_SIZE + PAGE_SIZE * PageId];
   }
 
-  // Return the size of the vector
+  // Return the capacity of the vector. I.e. the maximum size it can be expanded
+  // to with the expand method without allocating more pages.
   size_t capacity() const { return Lookup.size() * PAGE_SIZE; }
 
+  // Return the size of the vector. I.e. the maximum index that can be
+  // accessed, i.e. the maximum value which was used as argument of the
+  // expand method.
   size_t size() const { return Size; }
 
-  // Expands the vector to the given size.
-  // If the vector is already bigger, does nothing.
+  // Expands the vector to the given NewSize number of elements.
+  // If the vector was smaller, allocates new pages as needed.
+  // It should be called only with NewSize >= Size.
   void expand(size_t NewSize) {
     // You cannot shrink the vector, otherwise
-    // you would have to invalidate
+    // one would have to invalidate contents which is expensive and
+    // while giving the false hope that the resize is cheap.
     assert(NewSize >= Size);
     if (NewSize <= Size) {
       return;
     }
+    // If the capacity is enough, just update the size and continue
+    // with the currently allocated pages.
     if (NewSize <= capacity()) {
       Size = NewSize;
       return;
     }
+    // The number of pages to allocate. The Remainder is calculated
+    // for the case in which the NewSize is not a multiple of PAGE_SIZE.
+    // In that case we need one more page.
     auto Pages = NewSize / PAGE_SIZE;
     auto Remainder = NewSize % PAGE_SIZE;
     if (Remainder) {
       Pages += 1;
     }
     assert(Pages > Lookup.size());
+    // We use -1 to indicate that a page has not been allocated yet.
+    // This cannot be 0, because 0 is a valid page id.
+    // We use -1 instead of a separate bool to avoid wasting space.
     Lookup.resize(Pages, -1);
     Size = NewSize;
   }
@@ -83,13 +105,18 @@ public:
   // Return true if the vector is empty
   bool empty() const { return Size == 0; }
 
-  /// Clear the vector
+  /// Clear the vector, i.e. clear the allocated pages, the whole page
+  /// lookup index and reset the size.
   void clear() {
     Size = 0;
     Lookup.clear();
     Data.clear();
   }
 
+  /// Return the materialised vector. This is useful if you want to iterate
+  /// in an efficient way over the non default constructed elements.
+  /// It's not called data() because that would be misleading, since only
+  /// elements for pages which have been accessed are actually allocated.
   std::vector<T> const &materialised() const { return Data; }
 };
 
