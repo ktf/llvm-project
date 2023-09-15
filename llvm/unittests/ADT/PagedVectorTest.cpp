@@ -16,9 +16,11 @@
 namespace llvm {
 TEST(PagedVectorTest, FunctionalityTest) {
   PagedVector<int, 10> V;
+  EXPECT_EQ(V.empty(), true);
 
   // Next ten numbers are 10..19
   V.expand(2);
+  EXPECT_EQ(V.empty(), false);
   V.expand(10);
   V.expand(20);
   V.expand(30);
@@ -71,14 +73,20 @@ TEST(PagedVectorTest, FunctionalityTest) {
   EXPECT_EQ(V.capacity(), 50ULL);
   for (int I = 0; I < 36; ++I) {
     EXPECT_EQ(V[I], I);
+    EXPECT_EQ(V.at(I), I);
   }
   for (int I = 37; I < 40; ++I) {
     EXPECT_EQ(V[I], 0);
+    EXPECT_EQ(V.at(I), 0);
   }
   V.expand(50);
   EXPECT_EQ(V.capacity(), 50ULL);
   EXPECT_EQ(V.size(), 50ULL);
   EXPECT_EQ(V[40], 40);
+  EXPECT_EQ(V.at(40), 40);
   V.expand(50ULL);
+  V.clear();
+  EXPECT_EQ(V.size(), 0ULL);
+  EXPECT_EQ(V.capacity(), 0ULL);
 }
 } // namespace llvm
