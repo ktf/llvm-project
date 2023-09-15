@@ -15,6 +15,7 @@
 
 #include <vector>
 
+namespace llvm {
 // A vector that allocates memory in pages.
 // Order is kept, but memory is allocated only when one element of the page is
 // accessed. This introduces a level of indirection, but it is useful when you
@@ -120,5 +121,5 @@ public:
   /// elements for pages which have been accessed are actually allocated.
   std::vector<T> const &materialised() const { return Data; }
 };
-
+} // namespace llvm
 #endif // LLVM_ADT_PAGEDVECTOR_H
