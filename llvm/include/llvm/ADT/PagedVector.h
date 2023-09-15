@@ -18,8 +18,8 @@
 // A vector that allocates memory in pages.
 // Order is kept, but memory is allocated only when one element of the page is
 // accessed. This introduces a level of indirection, but it is useful when you
-// have a sparsely initialised vector like for the case of ASTReader::DeclsLoaded
-// or ASTReader::TypesLoaded.
+// have a sparsely initialised vector like for the case of
+// ASTReader::DeclsLoaded or ASTReader::TypesLoaded.
 //
 // Notice that this does not have iterators, because if you
 // have iterators it probably means you are going to touch
@@ -32,10 +32,11 @@ template <typename T, int PAGE_SIZE = 1024 / sizeof(T)> class PagedVector {
   // Pages are allocated contiguously in the Data vector.
   mutable std::vector<int> Lookup;
   // Actual page data. All the page elements are added to this vector on the
-  // first access of any of the elements of the page. Elements default constructed
-  // and elements of the page are stored contiguously. The oder of the elements however
-  // depends on the order of access of the pages.
+  // first access of any of the elements of the page. Elements default
+  // constructed and elements of the page are stored contiguously. The oder of
+  // the elements however depends on the order of access of the pages.
   mutable std::vector<T> Data;
+
 public:
   // Lookup an element at position Index.
   T &operator[](int Index) const { return at(Index); }
