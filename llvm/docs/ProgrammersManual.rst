@@ -1625,6 +1625,35 @@ SmallVector has grown a few other minor advantages over std::vector, causing
    and is no longer "private to the implementation". A name like
    ``SmallVectorHeader`` might be more appropriate.
 
+.. _dss_smallvector:
+
+llvm/ADT/PagedVector.h
+^^^^^^^^^^^^^^^^^^^^^^
+
+``PagedVector<Type, PageSize>`` is a random access container that allocates (PageSize) elements
+of type Type when the first element of a page is accessed via the ``operator[]`` or the ``at()``
+method.  This is useful for the case in which the number of elements is known in advance and 
+their actual initialization is expensive and sparse so that it's only done lazily when the element is 
+accessed. Typical cases for this are the ASTReader::TypesLoaded and ASTReader::DeclsLoaded containers.
+
+The main advantage is that a PagedVector allows to delay the actual allocation of the page until it's needed,
+at the extra cost of one integer per page and one extra indirection when accessing elements with their positional
+index. 
+
+In order to maximise the memory footprint of this container, it's important to balance the PageSize so that 
+it's not too small (otherwise the overhead of the integer per page might become too high) and not too big 
+(otherwise the memory is wasted if the page is not fully used).
+
+The PagedVector can only be expanded at the end, and it's not possible to shrink it, to keep the implementation
+simple and not give the false hope that the resize operation is cheap.
+
+Moreover, while retaining the oder of the elements based on their insertion index, like a vector, iterating over
+the elements via begin() and end() is not provided in the API, due to the fact accessing the elements in order would
+allocate all the iterated pages, defeating memory savings and the purpose of the PagedVector.
+
+Finally a ``materialised()`` method is provided to access the elements associated to the accessed pages, which could
+speedup operations that need to iterate over initialized elements in a non-ordered manner.
+
 .. _dss_vector:
 
 <vector>
