@@ -29,7 +29,7 @@ namespace llvm {
 // the first place.
 template <typename T, int PAGE_SIZE = 1024 / sizeof(T)> class PagedVector {
   // The actual number of element in the vector which can be accessed.
-  size_t Size = 0;
+  std::size_t Size = 0;
   // The position of the initial element of the page in the Data vector.
   // Pages are allocated contiguously in the Data vector.
   mutable std::vector<int> Lookup;
@@ -41,12 +41,12 @@ template <typename T, int PAGE_SIZE = 1024 / sizeof(T)> class PagedVector {
 
 public:
   // Lookup an element at position Index.
-  T &operator[](size_t Index) const { return at(Index); }
+  T &operator[](std::size_t Index) const { return at(Index); }
 
   // Lookup an element at position i.
   // If the associated page is not filled, it will be filled with default
   // constructed elements. If the associated page is filled, return the element.
-  T &at(size_t Index) const {
+  T &at(std::size_t Index) const {
     assert(Index < Size);
     assert(Index / PAGE_SIZE < Lookup.size());
     auto &PageId = Lookup[Index / PAGE_SIZE];
@@ -64,7 +64,7 @@ public:
     // Calculate the actual position in the Data vector
     // by taking the start of the page and adding the offset
     // in the page.
-    size_t StoreIndex = Index % PAGE_SIZE + PAGE_SIZE * PageId;
+    std::size_t StoreIndex = Index % PAGE_SIZE + PAGE_SIZE * PageId;
     // Return the element
     assert(StoreIndex < Data.size());
     return Data[StoreIndex];
@@ -72,17 +72,17 @@ public:
 
   // Return the capacity of the vector. I.e. the maximum size it can be expanded
   // to with the expand method without allocating more pages.
-  size_t capacity() const { return Lookup.size() * PAGE_SIZE; }
+  std::size_t capacity() const { return Lookup.size() * PAGE_SIZE; }
 
   // Return the size of the vector. I.e. the maximum index that can be
   // accessed, i.e. the maximum value which was used as argument of the
   // expand method.
-  size_t size() const { return Size; }
+  std::size_t size() const { return Size; }
 
   // Expands the vector to the given NewSize number of elements.
   // If the vector was smaller, allocates new pages as needed.
   // It should be called only with NewSize >= Size.
-  void expand(size_t NewSize) {
+  void expand(std::size_t NewSize) {
     // You cannot shrink the vector, otherwise
     // one would have to invalidate contents which is expensive and
     // while giving the false hope that the resize is cheap.
