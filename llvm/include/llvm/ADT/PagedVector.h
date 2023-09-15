@@ -13,6 +13,7 @@
 #ifndef LLVM_ADT_PAGEDVECTOR_H
 #define LLVM_ADT_PAGEDVECTOR_H
 
+#include <cassert>
 #include <vector>
 
 namespace llvm {
