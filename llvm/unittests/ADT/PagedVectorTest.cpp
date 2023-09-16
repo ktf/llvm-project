@@ -14,6 +14,145 @@
 #include "gtest/gtest.h"
 
 namespace llvm {
+TEST(PagedVectorTest, EmptyTest) {
+  PagedVector<int, 10> V;
+  EXPECT_EQ(V.empty(), true);
+  EXPECT_EQ(V.size(), 0ULL);
+  EXPECT_EQ(V.capacity(), 0ULL);
+  EXPECT_EQ(V.materialised().size(), 0ULL);
+}
+
+TEST(PagedVectorTest, ExpandTest) {
+  PagedVector<int, 10> V;
+  V.expand(2);
+  EXPECT_EQ(V.empty(), false);
+  EXPECT_EQ(V.size(), 2ULL);
+  EXPECT_EQ(V.capacity(), 10ULL);
+  EXPECT_EQ(V.materialised().size(), 0ULL);
+}
+
+TEST(PagedVectorTest, FullPageFillingTest) {
+  PagedVector<int, 10> V;
+  V.expand(10);
+  for (int I = 0; I < 10; ++I) {
+    V[I] = I;
+  }
+  EXPECT_EQ(V.empty(), false);
+  EXPECT_EQ(V.size(), 10ULL);
+  EXPECT_EQ(V.capacity(), 10ULL);
+  EXPECT_EQ(V.materialised().size(), 10ULL);
+  for (int I = 0; I < 10; ++I) {
+    EXPECT_EQ(V[I], I);
+  }
+}
+
+TEST(PagedVectorTest, HalfPageFillingTest) {
+  PagedVector<int, 10> V;
+  V.expand(5);
+  EXPECT_EQ(V.empty(), false);
+  EXPECT_EQ(V.size(), 5ULL);
+  EXPECT_EQ(V.capacity(), 10ULL);
+  for (int I = 0; I < 5; ++I) {
+    V[I] = I;
+  }
+  EXPECT_EQ(V.materialised().size(), 10ULL);
+  for (int I = 0; I < 5; ++I) {
+    EXPECT_EQ(V[I], I);
+  }
+}
+
+TEST(PagedVectorTest, FillFullMultiPageTest) {
+  PagedVector<int, 10> V;
+  V.expand(20);
+  EXPECT_EQ(V.empty(), false);
+  EXPECT_EQ(V.size(), 20ULL);
+  EXPECT_EQ(V.capacity(), 20ULL);
+  for (int I = 0; I < 20; ++I) {
+    V[I] = I;
+  }
+  EXPECT_EQ(V.materialised().size(), 20ULL);
+}
+
+TEST(PagedVectorTest, FillHalfMultiPageTest) {
+  PagedVector<int, 10> V;
+  V.expand(20);
+  EXPECT_EQ(V.empty(), false);
+  EXPECT_EQ(V.size(), 20ULL);
+  EXPECT_EQ(V.capacity(), 20ULL);
+  for (int I = 0; I < 5; ++I) {
+    V[I] = I;
+  }
+  for (int I = 10; I < 15; ++I) {
+    V[I] = I;
+  }
+  EXPECT_EQ(V.materialised().size(), 20ULL);
+  for (int I = 0; I < 5; ++I) {
+    EXPECT_EQ(V[I], I);
+  }
+  for (int I = 10; I < 15; ++I) {
+    EXPECT_EQ(V[I], I);
+  }
+}
+
+TEST(PagedVectorTest, FillLastMultiPageTest) {
+  PagedVector<int, 10> V;
+  V.expand(20);
+  EXPECT_EQ(V.empty(), false);
+  EXPECT_EQ(V.size(), 20ULL);
+  EXPECT_EQ(V.capacity(), 20ULL);
+  for (int I = 10; I < 15; ++I) {
+    V[I] = I;
+  }
+  for (int I = 10; I < 15; ++I) {
+    EXPECT_EQ(V[I], I);
+  }
+
+  // Since we fill the last page only, the materialised vector
+  // should contain only the last page.
+  for (int I = 10; I < 15; ++I) {
+    EXPECT_EQ(V.materialised()[I - 10], I);
+  }
+  EXPECT_EQ(V.materialised().size(), 10ULL);
+}
+
+// Filling the first element of all the pages
+// will allocate all of them
+TEST(PagedVectorTest, FillSparseMultiPageTest) {
+  PagedVector<int, 10> V;
+  V.expand(100);
+  EXPECT_EQ(V.empty(), false);
+  EXPECT_EQ(V.size(), 100ULL);
+  EXPECT_EQ(V.capacity(), 100ULL);
+  for (int I = 0; I < 10; ++I) {
+    V[I * 10] = I;
+  }
+  EXPECT_EQ(V.materialised().size(), 100ULL);
+  for (int I = 0; I < 100; ++I) {
+    if (I % 10 == 0) {
+      EXPECT_EQ(V[I], I / 10);
+    } else {
+      EXPECT_EQ(V[I], 0);
+    }
+  }
+}
+
+struct TestHelper {
+  int A = -1;
+};
+
+TEST(PagedVectorTest, FillNonTrivialConstructor) {
+  PagedVector<TestHelper, 10> V;
+  V.expand(10);
+  EXPECT_EQ(V.empty(), false);
+  EXPECT_EQ(V.size(), 10ULL);
+  EXPECT_EQ(V.capacity(), 10ULL);
+  EXPECT_EQ(V.materialised().size(), 0ULL);
+  for (int I = 0; I < 10; ++I) {
+    EXPECT_EQ(V[I].A, -1);
+  }
+  EXPECT_EQ(V.materialised().size(), 10ULL);
+}
+
 TEST(PagedVectorTest, FunctionalityTest) {
   PagedVector<int, 10> V;
   EXPECT_EQ(V.empty(), true);

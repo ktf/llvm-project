@@ -30,6 +30,7 @@ namespace llvm {
 // the first place.
 template <typename T, std::size_t PAGE_SIZE = 1024 / sizeof(T)>
 class PagedVector {
+  static_assert(PAGE_SIZE > 0, "PAGE_SIZE must be greater than 0. Most likely you want it to be greater than 16.");
   // The actual number of element in the vector which can be accessed.
   std::size_t Size = 0;
   // The position of the initial element of the page in the Data vector.
@@ -37,7 +38,7 @@ class PagedVector {
   mutable std::vector<int> PageToDataIdx;
   // Actual page data. All the page elements are added to this vector on the
   // first access of any of the elements of the page. Elements default
-  // constructed and elements of the page are stored contiguously. The oder of
+  // constructed and elements of the page are stored contiguously. The order of
   // the elements however depends on the order of access of the pages.
   mutable std::vector<T> Data;
 

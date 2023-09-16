@@ -1652,7 +1652,7 @@ the elements via begin() and end() is not provided in the API, due to the fact a
 allocate all the iterated pages, defeating memory savings and the purpose of the PagedVector.
 
 Finally a ``materialised()`` method is provided to access the elements associated to the accessed pages, which could
-speedup operations that need to iterate over initialized elements in a non-ordered manner.
+speed up operations that need to iterate over initialized elements in a non-ordered manner.
 
 .. _dss_vector:
 
