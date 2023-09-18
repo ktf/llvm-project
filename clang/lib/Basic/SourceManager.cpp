@@ -2346,7 +2346,7 @@ SourceManager::MemoryBufferSizes SourceManager::getMemoryBufferSizes() const {
 size_t SourceManager::getDataStructureSizes() const {
   size_t size = llvm::capacity_in_bytes(MemBufferInfos) +
                 llvm::capacity_in_bytes(LocalSLocEntryTable) +
-                llvm::capacity_in_bytes(LoadedSLocEntryTable.materialised()) +
+                LoadedSLocEntryTable.getAllocator()->getTotalMemory() +
                 llvm::capacity_in_bytes(SLocEntryLoaded) +
                 llvm::capacity_in_bytes(FileInfos);
 

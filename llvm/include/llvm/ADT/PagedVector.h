@@ -13,7 +13,9 @@
 #ifndef LLVM_ADT_PAGEDVECTOR_H
 #define LLVM_ADT_PAGEDVECTOR_H
 
+#include "llvm/Support/Allocator.h"
 #include <cassert>
+#include <iostream>
 #include <vector>
 
 namespace llvm {
@@ -28,21 +30,44 @@ namespace llvm {
 // have iterators it probably means you are going to touch
 // all the memory in any case, so better use a std::vector in
 // the first place.
+//
+// Pages are allocated in SLAB_SIZE chunks, using the BumpPtrAllocator.
 template <typename T, std::size_t PAGE_SIZE = 1024 / sizeof(T)>
 class PagedVector {
-  static_assert(PAGE_SIZE > 0, "PAGE_SIZE must be greater than 0. Most likely you want it to be greater than 16.");
+  static_assert(PAGE_SIZE > 0, "PAGE_SIZE must be greater than 0. Most likely "
+                               "you want it to be greater than 16.");
   // The actual number of element in the vector which can be accessed.
   std::size_t Size = 0;
+
   // The position of the initial element of the page in the Data vector.
   // Pages are allocated contiguously in the Data vector.
-  mutable std::vector<int> PageToDataIdx;
+  mutable std::vector<T *> PageToDataIdx;
   // Actual page data. All the page elements are added to this vector on the
   // first access of any of the elements of the page. Elements default
   // constructed and elements of the page are stored contiguously. The order of
   // the elements however depends on the order of access of the pages.
-  mutable std::vector<T> Data;
+  uintptr_t Allocator = 0;
+
+  constexpr static T *invalidPage() { return reinterpret_cast<T *>(SIZE_MAX); }
 
 public:
+  // Default constructor. We build our own allocator.
+  PagedVector()
+      : Allocator(reinterpret_cast<uintptr_t>(new BumpPtrAllocator) | 0x1) {}
+  PagedVector(BumpPtrAllocator *A)
+      : Allocator(reinterpret_cast<uintptr_t>(A)) {}
+
+  ~PagedVector() {
+    // If we own the allocator, delete it.
+    if (Allocator & 0x1) {
+      delete getAllocator();
+    }
+  }
+
+  // Get the allocator.
+  BumpPtrAllocator *getAllocator() const {
+    return reinterpret_cast<BumpPtrAllocator *>(Allocator & ~0x1);
+  }
   // Lookup an element at position Index.
   T &operator[](std::size_t Index) const { return at(Index); }
 
@@ -52,22 +77,18 @@ public:
   T &at(std::size_t Index) const {
     assert(Index < Size);
     assert(Index / PAGE_SIZE < PageToDataIdx.size());
-    auto &PageId = PageToDataIdx[Index / PAGE_SIZE];
-    // If the range is not filled, fill it
-    if (PageId == -1) {
-      std::size_t OldSize = Data.size();
-      PageId = OldSize / PAGE_SIZE;
-      // Allocate the memory and fill it with default constructed elements
-      // by resizing the vector.
-      Data.resize(OldSize + PAGE_SIZE);
+    auto *&PagePtr = PageToDataIdx[Index / PAGE_SIZE];
+    // If the page was not yet allocated, allocate it.
+    if (PagePtr == invalidPage()) {
+      PagePtr = getAllocator()->template Allocate<T>(PAGE_SIZE);
+      // We need to invoke the default constructor on all the elements of the
+      // page.
+      for (std::size_t I = 0; I < PAGE_SIZE; ++I) {
+        new (PagePtr + I) T();
+      }
     }
-    // Calculate the actual position in the Data vector
-    // by taking the start of the page and adding the offset
-    // in the page.
-    std::size_t StoreIndex = Index % PAGE_SIZE + PAGE_SIZE * PageId;
-    // Return the element
-    assert(StoreIndex < Data.size());
-    return Data[StoreIndex];
+    // Dereference the element in the page.
+    return *((Index % PAGE_SIZE) + PagePtr);
   }
 
   // Return the capacity of the vector. I.e. the maximum size it can be expanded
@@ -104,10 +125,10 @@ public:
       Pages += 1;
     }
     assert(Pages > PageToDataIdx.size());
-    // We use -1 to indicate that a page has not been allocated yet.
+    // We use invalidPage() to indicate that a page has not been allocated yet.
     // This cannot be 0, because 0 is a valid page id.
-    // We use -1 instead of a separate bool to avoid wasting space.
-    PageToDataIdx.resize(Pages, -1);
+    // We use invalidPage() instead of a separate bool to avoid wasting space.
+    PageToDataIdx.resize(Pages, invalidPage());
     Size = NewSize;
   }
 
@@ -118,15 +139,163 @@ public:
   /// lookup index and reset the size.
   void clear() {
     Size = 0;
+    // If we own the allocator, simply reset it, otherwise we
+    // deallocate the pages one by one.
+    if (Allocator & 0x1) {
+      getAllocator()->Reset();
+    } else {
+      for (auto *Page : PageToDataIdx) {
+        getAllocator()->Deallocate(Page);
+      }
+    }
     PageToDataIdx.clear();
-    Data.clear();
   }
 
-  /// Return the materialised vector. This is useful if you want to iterate
-  /// in an efficient way over the non default constructed elements.
-  /// It's not called data() because that would be misleading, since only
-  /// elements for pages which have been accessed are actually allocated.
-  std::vector<T> const &materialised() const { return Data; }
+  // Iterator on all the elements of the vector
+  // which have actually being constructed.
+  class MaterialisedIterator {
+    PagedVector const *PV;
+    size_t ElementIdx;
+
+  public:
+    using iterator_category = std::forward_iterator_tag;
+    using value_type = T;
+    using difference_type = std::ptrdiff_t;
+    using pointer = T *;
+    using reference = T &;
+
+    MaterialisedIterator(PagedVector const *PV, size_t ElementIdx)
+        : PV(PV), ElementIdx(ElementIdx) {}
+
+    // When incrementing the iterator, we skip the elements which have not
+    // been materialised yet.
+    MaterialisedIterator &operator++() {
+      while (ElementIdx < PV->Size) {
+        ++ElementIdx;
+        if (PV->PageToDataIdx[ElementIdx / PAGE_SIZE] != invalidPage()) {
+          return *this;
+        }
+      }
+      return *this;
+    }
+    // Post increment operator.
+    MaterialisedIterator operator++(int) {
+      auto Copy = *this;
+      ++*this;
+      return Copy;
+    }
+
+    std::ptrdiff_t operator-(MaterialisedIterator const &Other) const {
+      assert(PV == Other.PV);
+      // If they are on the same table we can just subtract the indices.
+      // Otherwise we have to iterate over the pages to find the difference.
+      // If a page is invalid, we skip it.
+      if (PV == Other.PV) {
+        return ElementIdx - Other.ElementIdx;
+      }
+
+      auto ElementMin = std::min(ElementIdx, Other.ElementIdx);
+      auto ElementMax = std::max(ElementIdx, Other.ElementIdx);
+      auto PageMin = ElementMin / PAGE_SIZE;
+      auto PageMax = ElementMax / PAGE_SIZE;
+
+      auto Count = 0ULL;
+      for (auto PageIdx = PageMin; PageIdx < PageMax; ++PageIdx) {
+        if (PV->PageToDataIdx[PageIdx] == invalidPage()) {
+          continue;
+        }
+        Count += PAGE_SIZE;
+      }
+      Count += ElementMax % PAGE_SIZE;
+      Count += PAGE_SIZE - ElementMin % PAGE_SIZE;
+
+      return Count;
+    }
+
+    // When dereferencing the iterator, we materialise the page if needed.
+    T const &operator*() const {
+      assert(ElementIdx < PV->Size);
+      assert(PV->PageToDataIdx[ElementIdx / PAGE_SIZE] != invalidPage());
+      return *((ElementIdx % PAGE_SIZE) +
+               PV->PageToDataIdx[ElementIdx / PAGE_SIZE]);
+    }
+
+    // Equality operator.
+    bool operator==(MaterialisedIterator const &Other) const {
+      // Iterators of two different vectors are never equal.
+      if (PV != Other.PV) {
+        return false;
+      }
+      // Any iterator for an empty vector is equal to any other iterator.
+      if (PV->empty()) {
+        return true;
+      }
+      // Get the pages of the two iterators. If between the two pages there
+      // are no valid pages, we can condider the iterators equal.
+      auto PageMin = std::min(ElementIdx, Other.ElementIdx) / PAGE_SIZE;
+      auto PageMax = std::max(ElementIdx, Other.ElementIdx) / PAGE_SIZE;
+      // If the two pages are past the end, the iterators are equal.
+      if (PageMin >= PV->PageToDataIdx.size()) {
+        return true;
+      }
+      // If only the last page is past the end, the iterators are equal if
+      // all the pages up to the end are invalid.
+      if (PageMax >= PV->PageToDataIdx.size()) {
+        for (auto PageIdx = PageMin; PageIdx < PV->PageToDataIdx.size();
+             ++PageIdx) {
+          if (PV->PageToDataIdx[PageIdx] != invalidPage()) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      auto *Page1 = PV->PageToDataIdx[PageMin];
+      auto *Page2 = PV->PageToDataIdx[PageMax];
+      if (Page1 == invalidPage() && Page2 == invalidPage()) {
+        return true;
+      }
+      // If the two pages are the same, the iterators are equal if they point
+      // to the same element.
+      if (PageMin == PageMax) {
+        return ElementIdx == Other.ElementIdx;
+      }
+      // If the two pages are different, the iterators are equal if all the
+      // pages between them are invalid.
+      for (auto PageIdx = PageMin; PageIdx < PageMax; ++PageIdx) {
+        if (PV->PageToDataIdx[PageIdx] != invalidPage()) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    bool operator!=(MaterialisedIterator const &Other) const {
+      return (*this == Other) == false;
+    }
+
+    [[nodiscard]] size_t getIndex() const { return ElementIdx; }
+  };
+
+  // Iterators over the materialised elements of the vector.
+  // This includes all the elements belonging to allocated pages,
+  // even if they have not been accessed yet. It's enough to access
+  // one element of a page to materialise all the elements of the page.
+  MaterialisedIterator materialisedBegin() const {
+    // Look for the first valid page
+    auto ElementIdx = 0ULL;
+    while (ElementIdx < Size) {
+      if (PageToDataIdx[ElementIdx / PAGE_SIZE] != invalidPage()) {
+        break;
+      }
+      ++ElementIdx;
+    }
+    return MaterialisedIterator(this, ElementIdx);
+  }
+
+  MaterialisedIterator materialisedEnd() const {
+    return MaterialisedIterator(this, Size);
+  }
 };
 } // namespace llvm
 #endif // LLVM_ADT_PAGEDVECTOR_H

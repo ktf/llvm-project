@@ -12,6 +12,7 @@
 
 #include "llvm/ADT/PagedVector.h"
 #include "gtest/gtest.h"
+#include <iterator>
 
 namespace llvm {
 TEST(PagedVectorTest, EmptyTest) {
@@ -19,7 +20,9 @@ TEST(PagedVectorTest, EmptyTest) {
   EXPECT_EQ(V.empty(), true);
   EXPECT_EQ(V.size(), 0ULL);
   EXPECT_EQ(V.capacity(), 0ULL);
-  EXPECT_EQ(V.materialised().size(), 0ULL);
+  EXPECT_EQ(V.materialisedBegin().getIndex(), 0ULL);
+  EXPECT_EQ(V.materialisedEnd().getIndex(), 0ULL);
+  EXPECT_EQ(std::distance(V.materialisedBegin(), V.materialisedEnd()), 0ULL);
 }
 
 TEST(PagedVectorTest, ExpandTest) {
@@ -28,19 +31,26 @@ TEST(PagedVectorTest, ExpandTest) {
   EXPECT_EQ(V.empty(), false);
   EXPECT_EQ(V.size(), 2ULL);
   EXPECT_EQ(V.capacity(), 10ULL);
-  EXPECT_EQ(V.materialised().size(), 0ULL);
+  EXPECT_EQ(V.materialisedBegin().getIndex(), 2ULL);
+  EXPECT_EQ(V.materialisedEnd().getIndex(), 2ULL);
+  EXPECT_EQ(std::distance(V.materialisedBegin(), V.materialisedEnd()), 0ULL);
 }
 
 TEST(PagedVectorTest, FullPageFillingTest) {
   PagedVector<int, 10> V;
   V.expand(10);
+  EXPECT_EQ(V.empty(), false);
+  EXPECT_EQ(V.size(), 10ULL);
+  EXPECT_EQ(V.capacity(), 10ULL);
   for (int I = 0; I < 10; ++I) {
     V[I] = I;
   }
   EXPECT_EQ(V.empty(), false);
   EXPECT_EQ(V.size(), 10ULL);
   EXPECT_EQ(V.capacity(), 10ULL);
-  EXPECT_EQ(V.materialised().size(), 10ULL);
+  EXPECT_EQ(V.materialisedBegin().getIndex(), 0ULL);
+  EXPECT_EQ(V.materialisedEnd().getIndex(), 10ULL);
+  EXPECT_EQ(std::distance(V.materialisedBegin(), V.materialisedEnd()), 10ULL);
   for (int I = 0; I < 10; ++I) {
     EXPECT_EQ(V[I], I);
   }
@@ -55,7 +65,7 @@ TEST(PagedVectorTest, HalfPageFillingTest) {
   for (int I = 0; I < 5; ++I) {
     V[I] = I;
   }
-  EXPECT_EQ(V.materialised().size(), 10ULL);
+  EXPECT_EQ(std::distance(V.materialisedBegin(), V.materialisedEnd()), 5ULL);
   for (int I = 0; I < 5; ++I) {
     EXPECT_EQ(V[I], I);
   }
@@ -70,7 +80,7 @@ TEST(PagedVectorTest, FillFullMultiPageTest) {
   for (int I = 0; I < 20; ++I) {
     V[I] = I;
   }
-  EXPECT_EQ(V.materialised().size(), 20ULL);
+  EXPECT_EQ(std::distance(V.materialisedBegin(), V.materialisedEnd()), 20ULL);
 }
 
 TEST(PagedVectorTest, FillHalfMultiPageTest) {
@@ -85,7 +95,7 @@ TEST(PagedVectorTest, FillHalfMultiPageTest) {
   for (int I = 10; I < 15; ++I) {
     V[I] = I;
   }
-  EXPECT_EQ(V.materialised().size(), 20ULL);
+  EXPECT_EQ(std::distance(V.materialisedBegin(), V.materialisedEnd()), 20ULL);
   for (int I = 0; I < 5; ++I) {
     EXPECT_EQ(V[I], I);
   }
@@ -109,10 +119,17 @@ TEST(PagedVectorTest, FillLastMultiPageTest) {
 
   // Since we fill the last page only, the materialised vector
   // should contain only the last page.
-  for (int I = 10; I < 15; ++I) {
-    EXPECT_EQ(V.materialised()[I - 10], I);
+  int J = 10;
+  for (auto MI = V.materialisedBegin(), ME = V.materialisedEnd(); MI != ME;
+       ++MI) {
+    if (J < 15) {
+      EXPECT_EQ(*MI, J);
+    } else {
+      EXPECT_EQ(*MI, 0);
+    }
+    ++J;
   }
-  EXPECT_EQ(V.materialised().size(), 10ULL);
+  EXPECT_EQ(std::distance(V.materialisedBegin(), V.materialisedEnd()), 10ULL);
 }
 
 // Filling the first element of all the pages
@@ -126,7 +143,7 @@ TEST(PagedVectorTest, FillSparseMultiPageTest) {
   for (int I = 0; I < 10; ++I) {
     V[I * 10] = I;
   }
-  EXPECT_EQ(V.materialised().size(), 100ULL);
+  EXPECT_EQ(std::distance(V.materialisedBegin(), V.materialisedEnd()), 100ULL);
   for (int I = 0; I < 100; ++I) {
     if (I % 10 == 0) {
       EXPECT_EQ(V[I], I / 10);
@@ -146,11 +163,11 @@ TEST(PagedVectorTest, FillNonTrivialConstructor) {
   EXPECT_EQ(V.empty(), false);
   EXPECT_EQ(V.size(), 10ULL);
   EXPECT_EQ(V.capacity(), 10ULL);
-  EXPECT_EQ(V.materialised().size(), 0ULL);
+  EXPECT_EQ(std::distance(V.materialisedBegin(), V.materialisedEnd()), 0ULL);
   for (int I = 0; I < 10; ++I) {
     EXPECT_EQ(V[I].A, -1);
   }
-  EXPECT_EQ(V.materialised().size(), 10ULL);
+  EXPECT_EQ(std::distance(V.materialisedBegin(), V.materialisedEnd()), 10ULL);
 }
 
 TEST(PagedVectorTest, FunctionalityTest) {
@@ -163,7 +180,7 @@ TEST(PagedVectorTest, FunctionalityTest) {
   V.expand(10);
   V.expand(20);
   V.expand(30);
-  EXPECT_EQ(V.materialised().size(), 0ULL);
+  EXPECT_EQ(std::distance(V.materialisedBegin(), V.materialisedEnd()), 0ULL);
 
   EXPECT_EQ(V.size(), 30ULL);
   for (int I = 0; I < 10; ++I) {
@@ -172,14 +189,14 @@ TEST(PagedVectorTest, FunctionalityTest) {
   for (int I = 0; I < 10; ++I) {
     EXPECT_EQ(V[I], I);
   }
-  EXPECT_EQ(V.materialised().size(), 10ULL);
+  EXPECT_EQ(std::distance(V.materialisedBegin(), V.materialisedEnd()), 10ULL);
   for (int I = 20; I < 30; ++I) {
     V[I] = I;
   }
   for (int I = 20; I < 30; ++I) {
     EXPECT_EQ(V[I], I);
   }
-  EXPECT_EQ(V.materialised().size(), 20ULL);
+  EXPECT_EQ(std::distance(V.materialisedBegin(), V.materialisedEnd()), 20ULL);
 
   for (int I = 10; I < 20; ++I) {
     V[I] = I;
@@ -187,13 +204,13 @@ TEST(PagedVectorTest, FunctionalityTest) {
   for (int I = 10; I < 20; ++I) {
     EXPECT_EQ(V[I], I);
   }
-  EXPECT_EQ(V.materialised().size(), 30ULL);
+  EXPECT_EQ(std::distance(V.materialisedBegin(), V.materialisedEnd()), 30ULL);
   V.expand(35);
-  EXPECT_EQ(V.materialised().size(), 30ULL);
+  EXPECT_EQ(std::distance(V.materialisedBegin(), V.materialisedEnd()), 30ULL);
   for (int I = 30; I < 35; ++I) {
     V[I] = I;
   }
-  EXPECT_EQ(V.materialised().size(), 40ULL);
+  EXPECT_EQ(std::distance(V.materialisedBegin(), V.materialisedEnd()), 35ULL);
   EXPECT_EQ(V.size(), 35ULL);
   EXPECT_EQ(V.capacity(), 40ULL);
   V.expand(37);
