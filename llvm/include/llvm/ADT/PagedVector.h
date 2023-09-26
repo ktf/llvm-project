@@ -91,7 +91,7 @@ public:
       PagePtr = NewPagePtr;
     }
     // Dereference the element in the page.
-    return *((Index % PageSize) + PagePtr);
+    return PagePtr[Index % PageSize];
   }
 
   /// Return the capacity of the vector. I.e. the maximum size it can be
@@ -233,7 +233,7 @@ public:
       assert(ElementIdx < PV->Size);
       assert(PV->PageToDataPtrs[ElementIdx / PageSize] != InvalidPage);
       T *PagePtr = PV->PageToDataPtrs[ElementIdx / PageSize];
-      return *((ElementIdx % PageSize) + PagePtr);
+      return PagePtr[ElementIdx % PageSize];
     }
 
     friend bool operator==(MaterialisedIterator const &LHS,
