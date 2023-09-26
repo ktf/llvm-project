@@ -130,7 +130,7 @@ public:
     // constructed not only the one effectively neeeded.
     if (NewSize < Size) {
       size_t NewLastPage = (NewSize - 1) / PageSize;
-      for (size_t I = NewLastPage + 1, E = PageToDataPtrs.size(); I < E; ++I) {
+      for (size_t I = NewLastPage + 1, N = PageToDataPtrs.size(); I < N; ++I) {
         T *PagePtr = PageToDataPtrs[I];
         if (PagePtr == InvalidPage)
           continue;
