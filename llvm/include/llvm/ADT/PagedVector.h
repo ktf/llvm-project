@@ -85,8 +85,7 @@ public:
       T *NewPagePtr = Allocator.getPointer()->template Allocate<T>(PageSize);
       // We need to invoke the default constructor on all the elements of the
       // page.
-      for (size_t I = 0; I < PageSize; ++I)
-        new (NewPagePtr + I) T();
+      std::uninitialized_value_construct_n(NewPagePtr, PageSize);
 
       PagePtr = NewPagePtr;
     }
