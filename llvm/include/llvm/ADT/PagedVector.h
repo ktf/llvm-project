@@ -137,8 +137,7 @@ public:
           continue;
         T *Page = PagePtr;
         // We need to invoke the destructor on all the elements of the page.
-        for (size_t J = 0; J < PageSize; ++J)
-          Page[J].~T();
+        std::destroy_n(Page, PageSize);
         Allocator.getPointer()->Deallocate(Page);
         // We mark the page invalid, to avoid double deletion.
         PageToDataPtrs[I] = InvalidPage;
@@ -175,8 +174,7 @@ public:
     for (T *Page : PageToDataPtrs) {
       if (Page == InvalidPage)
         continue;
-      for (size_t I = 0; I < PageSize; ++I)
-        Page[I].~T();
+      std::destroy_n(Page, PageSize);
       // If we do not own the allocator, deallocate the pages one by one.
       if (!Allocator.getInt())
         Allocator.getPointer()->Deallocate(Page);
