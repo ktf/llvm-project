@@ -47,7 +47,7 @@ template <typename T, size_t PageSize = 1024 / sizeof(T)> class PagedVector {
   /// The position of the initial element of the page in the Data vector.
   /// Pages are allocated contiguously in the Data vector.
   mutable SmallVector<T *, 0> PageToDataPtrs;
-  /// Actual page data. All the page elements are added to this vector on the
+  /// Actual page data. All the page elements are allocated on the
   /// first access of any of the elements of the page. Elements are default
   /// constructed and elements of the page are stored contiguously. The order of
   /// the elements however depends on the order of access of the pages.
