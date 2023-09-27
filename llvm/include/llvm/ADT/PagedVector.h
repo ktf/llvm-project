@@ -72,6 +72,12 @@ public:
       delete Allocator.getPointer();
   }
 
+  // Forbid copy and move as we do not need them for the current use case.
+  PagedVector(const PagedVector &) = delete;
+  PagedVector(PagedVector &&) = delete;
+  PagedVector &operator=(const PagedVector &) = delete;
+  PagedVector &operator=(PagedVector &&) = delete;
+
   /// Look up an element at position `Index`.
   /// If the associated page is not filled, it will be filled with default
   /// constructed elements. If the associated page is filled, return the
