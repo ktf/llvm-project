@@ -35,9 +35,11 @@ namespace llvm {
 /// Similarly on destruction the elements are destroyed only when the page is
 /// not needed anymore, delaying invoking the destructor of the elements.
 ///
-/// Notice that this does not have iterators, because if you have iterators it
-/// probably means you are going to touch all the memory in any case, so better
-/// use a std::vector in the first place.
+/// Notice that this has iterators only on materialised elements. This
+/// is deliberately done under the assumption you would dereference the elements
+/// while iterating, therefore materialising them and losing the gains in terms
+/// of memory usage this container provides. If you have such a use case, you
+/// probably want to use a normal std::vector or a llvm::SmallVector.
 template <typename T, size_t PageSize = 1024 / sizeof(T)> class PagedVector {
   static_assert(PageSize > 1, "PageSize must be greater than 0. Most likely "
                               "you want it to be greater than 16.");
