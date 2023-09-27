@@ -41,7 +41,7 @@ namespace llvm {
 template <typename T, size_t PageSize = 1024 / sizeof(T)> class PagedVector {
   static_assert(PageSize > 1, "PageSize must be greater than 0. Most likely "
                               "you want it to be greater than 16.");
-  /// The actual number of element in the vector which can be accessed.
+  /// The actual number of elements in the vector which can be accessed.
   size_t Size = 0;
 
   /// The position of the initial element of the page in the Data vector.
