@@ -158,18 +158,12 @@ public:
     // when the page was allocated.
     if (Size <= capacity())
       return;
-    // The number of pages to allocate. The Remainder is calculated
-    // for the case in which the NewSize is not a multiple of PageSize.
-    // In that case we need one more page.
-    size_t Pages = Size / PageSize;
-    size_t Remainder = Size % PageSize;
-    if (Remainder != 0)
-      Pages += 1;
-    assert(Pages > PageToDataPtrs.size());
     // We use InvalidPage to indicate that a page has not been allocated yet.
     // This cannot be 0, because 0 is a valid page id.
     // We use InvalidPage instead of a separate bool to avoid wasting space.
-    PageToDataPtrs.resize(Pages, InvalidPage);
+    size_t NewLastPage = (NewSize - 1) / PageSize;
+    assert(NewLastPage + 1 > PageToDataPtrs.size());
+    PageToDataPtrs.resize(NewLastPage + 1, InvalidPage);
   }
 
   [[nodiscard]] bool empty() const { return Size == 0; }
