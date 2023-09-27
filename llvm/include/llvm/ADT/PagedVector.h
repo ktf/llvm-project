@@ -247,43 +247,17 @@ public:
   friend bool operator==(MaterialisedIterator const &LHS,
                          MaterialisedIterator const &RHS) {
     assert(LHS.PV == RHS.PV);
-    auto *PV = LHS.PV;
-
-    // Any iterator for an empty vector is equal to any other iterator.
-    if (LHS.PV->empty())
-      return true;
-    // Get the pages of the two iterators. If between the two pages there
-    // are no valid pages, we can condider the iterators equal.
-    size_t PageMin = std::min(LHS.ElementIdx, RHS.ElementIdx) / PageSize;
-    size_t PageMax = std::max(LHS.ElementIdx, RHS.ElementIdx) / PageSize;
-    // If the two pages are past the end, the iterators are equal.
-    if (PageMin >= PV->PageToDataPtrs.size())
-      return true;
-    // If only the last page is past the end, the iterators are equal if
-    // all the pages up to the end are invalid.
-    if (PageMax >= PV->PageToDataPtrs.size()) {
-      for (size_t PageIdx = PageMin; PageIdx < PV->PageToDataPtrs.size();
-           ++PageIdx)
-        if (LHS.PV->PageToDataPtrs[PageIdx] != InvalidPage)
-          return false;
-      return true;
-    }
-
-    T *Page1 = PV->PageToDataPtrs[PageMin];
-    T *Page2 = PV->PageToDataPtrs[PageMax];
-    if (Page1 == InvalidPage && Page2 == InvalidPage)
-      return true;
-
-    // If the two pages are the same, the iterators are equal if they point
-    // to the same element.
-    if (PageMin == PageMax)
-      return LHS.ElementIdx == RHS.ElementIdx;
-
-    // If the two pages are different, the iterators are equal if all the
-    // pages between them are invalid.
-    return std::all_of(PV->PageToDataPtrs.begin() + PageMin,
-                       PV->PageToDataPtrs.begin() + PageMax,
-                       [](T *Page) { return Page == InvalidPage; });
+    // Make sure we are comparing either end iterators or iterators pointing
+    // to materialised elements.
+    // It should not be possible to build two iterators pointing to non
+    // materialised elements.
+    assert(LHS.ElementIdx >= LHS.PV->Size ||
+           (LHS.ElementIdx / PageSize < LHS.PV->PageToDataPtrs.size() &&
+            LHS.PV->PageToDataPtrs[LHS.ElementIdx / PageSize] != InvalidPage));
+    assert(RHS.ElementIdx >= RHS.PV->Size ||
+           (RHS.ElementIdx / PageSize < RHS.PV->PageToDataPtrs.size() &&
+            RHS.PV->PageToDataPtrs[RHS.ElementIdx / PageSize] != InvalidPage));
+    return LHS.ElementIdx == RHS.ElementIdx;
   }
 
   friend bool operator!=(MaterialisedIterator const &LHS,
