@@ -28,7 +28,7 @@ namespace llvm {
 /// have a sparsely initialised vector where the full size is allocated upfront.
 ///
 /// As a side effect the elements are initialised later than in a normal vector.
-/// On the first access to one of the elements of a given page all, the elements
+/// On the first access to one of the elements of a given page, all the elements
 /// of the page are initialised. This also means that the elements of the page
 /// are initialised beyond the size of the vector.
 ///
