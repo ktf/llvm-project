@@ -33,7 +33,7 @@ TEST(PagedVectorTest, ExpandTest) {
   V.resize(2);
   EXPECT_EQ(V.empty(), false);
   EXPECT_EQ(V.size(), 2ULL);
-  EXPECT_EQ(V.capacity(), 10ULL);
+  EXPECT_EQ(V.capacity(), 1280ULL);
   EXPECT_EQ(V.materialised_begin().getIndex(), 2ULL);
   EXPECT_EQ(V.materialised_end().getIndex(), 2ULL);
   EXPECT_EQ(std::distance(V.materialised_begin(), V.materialised_end()), 0LL);
@@ -44,13 +44,14 @@ TEST(PagedVectorTest, FullPageFillingTest) {
   V.resize(10);
   EXPECT_EQ(V.empty(), false);
   EXPECT_EQ(V.size(), 10ULL);
-  EXPECT_EQ(V.capacity(), 10ULL);
+  // The capacity is given by the size of the allocated slabs.
+  EXPECT_EQ(V.capacity(), 1280ULL);
   for (int I = 0; I < 10; ++I) {
     V[I] = I;
   }
   EXPECT_EQ(V.empty(), false);
   EXPECT_EQ(V.size(), 10ULL);
-  EXPECT_EQ(V.capacity(), 10ULL);
+  EXPECT_EQ(V.capacity(), 1280ULL);
   EXPECT_EQ(V.materialised_begin().getIndex(), 0ULL);
   EXPECT_EQ(V.materialised_end().getIndex(), 10ULL);
   EXPECT_EQ(std::distance(V.materialised_begin(), V.materialised_end()), 10LL);
@@ -64,7 +65,7 @@ TEST(PagedVectorTest, HalfPageFillingTest) {
   V.resize(5);
   EXPECT_EQ(V.empty(), false);
   EXPECT_EQ(V.size(), 5ULL);
-  EXPECT_EQ(V.capacity(), 10ULL);
+  EXPECT_EQ(V.capacity(), 1280ULL);
   for (int I = 0; I < 5; ++I) {
     V[I] = I;
   }
@@ -82,14 +83,21 @@ TEST(PagedVectorTest, FillFullMultiPageTest) {
   V.resize(20);
   EXPECT_EQ(V.empty(), false);
   EXPECT_EQ(V.size(), 20ULL);
-  EXPECT_EQ(V.capacity(), 20ULL);
+  EXPECT_EQ(V.capacity(), 1280ULL);
   for (int I = 0; I < 20; ++I) {
     V[I] = I;
+    EXPECT_EQ(V[I], I);
   }
   EXPECT_EQ(std::distance(V.materialised_begin(), V.materialised_end()), 20LL);
+  int J = 0;
   for (auto MI = V.materialised_begin(), ME = V.materialised_end(); MI != ME;
        ++MI) {
-    EXPECT_EQ(*MI, std::distance(V.materialised_begin(), MI));
+    EXPECT_EQ(V[J], J);
+    int I = *MI;
+    EXPECT_EQ(I, J);
+    int DI = std::distance(V.materialised_begin(), MI);
+    EXPECT_EQ(DI, J);
+    J++;
   }
 }
 
@@ -98,7 +106,7 @@ TEST(PagedVectorTest, FillHalfMultiPageTest) {
   V.resize(20);
   EXPECT_EQ(V.empty(), false);
   EXPECT_EQ(V.size(), 20ULL);
-  EXPECT_EQ(V.capacity(), 20ULL);
+  EXPECT_EQ(V.capacity(), 1280ULL);
   for (int I = 0; I < 5; ++I) {
     V[I] = I;
   }
@@ -119,7 +127,7 @@ TEST(PagedVectorTest, FillLastMultiPageTest) {
   V.resize(20);
   EXPECT_EQ(V.empty(), false);
   EXPECT_EQ(V.size(), 20ULL);
-  EXPECT_EQ(V.capacity(), 20ULL);
+  EXPECT_EQ(V.capacity(), 1280ULL);
   for (int I = 10; I < 15; ++I) {
     V[I] = I;
   }
@@ -149,7 +157,7 @@ TEST(PagedVectorTest, FillSparseMultiPageTest) {
   V.resize(100);
   EXPECT_EQ(V.empty(), false);
   EXPECT_EQ(V.size(), 100ULL);
-  EXPECT_EQ(V.capacity(), 100ULL);
+  EXPECT_EQ(V.capacity(), 1280ULL);
   for (int I = 0; I < 10; ++I) {
     V[I * 10] = I;
   }
@@ -185,7 +193,7 @@ TEST(PagedVectorTest, FillNonTrivialConstructor) {
   V.resize(10);
   EXPECT_EQ(V.empty(), false);
   EXPECT_EQ(V.size(), 10ULL);
-  EXPECT_EQ(V.capacity(), 10ULL);
+  EXPECT_EQ(V.capacity(), 1280ULL);
   EXPECT_EQ(std::distance(V.materialised_begin(), V.materialised_end()), 0LL);
   for (int I = 0; I < 10; ++I) {
     EXPECT_EQ(V[I].A, -1);
@@ -203,7 +211,7 @@ TEST(PagedVectorTest, FillNonTrivialConstructorDestructor) {
   EXPECT_EQ(TestHelper2::constructed, 0);
   EXPECT_EQ(V.empty(), false);
   EXPECT_EQ(V.size(), 19ULL);
-  EXPECT_EQ(V.capacity(), 20ULL);
+  EXPECT_EQ(V.capacity(), 1280ULL);
   EXPECT_EQ(std::distance(V.materialised_begin(), V.materialised_end()), 0LL);
   EXPECT_EQ(V[0].A, -1);
   EXPECT_EQ(TestHelper2::constructed, 10);
@@ -221,12 +229,6 @@ TEST(PagedVectorTest, FillNonTrivialConstructorDestructor) {
     EXPECT_EQ(TestHelper2::constructed, 20);
   }
   EXPECT_EQ(std::distance(V.materialised_begin(), V.materialised_end()), 19LL);
-  // We initialise the whole page, not just the materialised part
-  // EXPECT_EQ(TestHelper2::constructed, 20);
-  V.resize(18);
-  EXPECT_EQ(TestHelper2::destroyed, 0);
-  V.resize(1);
-  EXPECT_EQ(TestHelper2::destroyed, 10);
   V.resize(0);
   EXPECT_EQ(TestHelper2::destroyed, 20);
 
@@ -239,32 +241,6 @@ TEST(PagedVectorTest, FillNonTrivialConstructorDestructor) {
   EXPECT_EQ(V[49].A, 0);
   V.resize(0);
   EXPECT_EQ(TestHelper2::destroyed, 30);
-}
-
-TEST(PagedVectorTest, ShrinkTest) {
-  PagedVector<int, 10> V;
-  V.resize(20);
-  EXPECT_EQ(V.empty(), false);
-  EXPECT_EQ(V.size(), 20ULL);
-  EXPECT_EQ(V.capacity(), 20ULL);
-  for (int I = 0; I < 20; ++I) {
-    V[I] = I;
-  }
-  EXPECT_EQ(std::distance(V.materialised_begin(), V.materialised_end()), 20LL);
-  V.resize(9);
-  EXPECT_EQ(V.empty(), false);
-  EXPECT_EQ(V.size(), 9ULL);
-  EXPECT_EQ(V.capacity(), 10ULL);
-  for (int I = 0; I < 9; ++I) {
-    EXPECT_EQ(V[I], I);
-  }
-  EXPECT_EQ(std::distance(V.materialised_begin(), V.materialised_end()), 9LL);
-  V.resize(0);
-  EXPECT_EQ(V.empty(), true);
-  EXPECT_EQ(V.size(), 0ULL);
-  EXPECT_EQ(V.capacity(), 0ULL);
-  EXPECT_EQ(std::distance(V.materialised_begin(), V.materialised_end()), 0LL);
-  EXPECT_DEATH(V[0], "Index < Size");
 }
 
 TEST(PagedVectorTest, FunctionalityTest) {
@@ -309,13 +285,13 @@ TEST(PagedVectorTest, FunctionalityTest) {
   }
   EXPECT_EQ(std::distance(V.materialised_begin(), V.materialised_end()), 35LL);
   EXPECT_EQ(V.size(), 35ULL);
-  EXPECT_EQ(V.capacity(), 40ULL);
+  EXPECT_EQ(V.capacity(), 1280ULL);
   V.resize(37);
   for (int I = 30; I < 37; ++I) {
     V[I] = I;
   }
   EXPECT_EQ(V.size(), 37ULL);
-  EXPECT_EQ(V.capacity(), 40ULL);
+  EXPECT_EQ(V.capacity(), 1280ULL);
   for (int I = 0; I < 37; ++I) {
     EXPECT_EQ(V[I], I);
   }
@@ -323,7 +299,7 @@ TEST(PagedVectorTest, FunctionalityTest) {
   V.resize(41);
   V[40] = 40;
   EXPECT_EQ(V.size(), 41ULL);
-  EXPECT_EQ(V.capacity(), 50ULL);
+  EXPECT_EQ(V.capacity(), 1280ULL);
   for (int I = 0; I < 36; ++I) {
     EXPECT_EQ(V[I], I);
   }
@@ -331,7 +307,7 @@ TEST(PagedVectorTest, FunctionalityTest) {
     EXPECT_EQ(V[I], 0);
   }
   V.resize(50);
-  EXPECT_EQ(V.capacity(), 50ULL);
+  EXPECT_EQ(V.capacity(), 1280ULL);
   EXPECT_EQ(V.size(), 50ULL);
   EXPECT_EQ(V[40], 40);
   V.resize(50ULL);

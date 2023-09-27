@@ -40,22 +40,44 @@ namespace llvm {
 /// while iterating, therefore materialising them and losing the gains in terms
 /// of memory usage this container provides. If you have such a use case, you
 /// probably want to use a normal std::vector or a llvm::SmallVector.
-template <typename T, size_t PageSize = 1024 / sizeof(T)> class PagedVector {
-  static_assert(PageSize > 1, "PageSize must be greater than 0. Most likely "
+template <typename T, size_t PageSize = 16> class PagedVector {
+  static_assert(PageSize >= 1, "PageSize must be greater than 0. Most likely "
                               "you want it to be greater than 16.");
   /// The actual number of elements in the vector which can be accessed.
   size_t Size = 0;
 
-  /// The position of the initial element of the page in the Data vector.
-  /// Pages are allocated contiguously in the Data vector.
-  mutable SmallVector<T *, 0> PageToDataPtrs;
+  using PageIndexInSlabT = int8_t;
+  static constexpr size_t PagesInSlab = 128; // std::numeric_limits<int8_t>::max()*PageSize;
+  static constexpr size_t SlabSize = PagesInSlab*PageSize; 
+
+  /// Slabs are large portions of contiguous memory. Pages are constructed inside
+  /// the slab on demand.
+  mutable SmallVector<T *, 0> SlabPtrs;
+  /// Each page is allocated in a slab, getting the index from the page index / 
+  /// number of pages in a slab. While this will basically mean that all the 
+  /// slabs are allocated (unless data is extremely sparse), we can rely on the
+  /// system to not map unused memory pages, since pages are allocated in slabs
+  /// in access order.
+  /// This should mean that each empty page has the overhead of one byte, assuming
+  /// an already allocated slab is used plus the eventual mapping of an additional
+  /// memory page in the slab, if needed. If the slab is not allocated, the overhead
+  /// is the size of a pointer + the size of a memory page + one byte + the previously
+  /// mentioned byte.
+  ///
+  /// Notice how -1 is used to indicate an invalid page
+  mutable SmallVector<int8_t, 0> PageIndexInSlab;
+  /// Last page used in the slab. When we allocate a page in the slab, we 
+  /// will use this to determine the index of the page in the slab to be put
+  /// in the PageIndexInSlab vector.
+  mutable SmallVector<uint8_t, 0> LastPageInSlab;
+
   /// Actual page data. All the page elements are allocated on the
   /// first access of any of the elements of the page. Elements are default
   /// constructed and elements of the page are stored contiguously. The order of
   /// the elements however depends on the order of access of the pages.
   PointerIntPair<BumpPtrAllocator *, 1, bool> Allocator;
 
-  constexpr static T *InvalidPage = nullptr;
+  constexpr static PageIndexInSlabT InvalidPageIndex = -1;
 
 public:
   using value_type = T;
@@ -86,17 +108,24 @@ public:
   /// element.
   T &operator[](size_t Index) const {
     assert(Index < Size);
-    assert(Index / PageSize < PageToDataPtrs.size());
-    T *&PagePtr = PageToDataPtrs[Index / PageSize];
+    assert(Index / SlabSize < SlabPtrs.size());
+    T *&Slab = SlabPtrs[Index / SlabSize];
     // If the page was not yet allocated, allocate it.
-    if (PagePtr == InvalidPage) {
-      T *NewPagePtr = Allocator.getPointer()->template Allocate<T>(PageSize);
+    if (Slab == nullptr) {
+      Slab = Allocator.getPointer()->template Allocate<T>(SlabSize);
+    }
+
+    assert(Index / PageSize < PageIndexInSlab.size());
+    PageIndexInSlabT &PageIndex = PageIndexInSlab[Index / PageSize];
+
+    // We need to construct the elements of the page.
+    if (PageIndex == InvalidPageIndex) {
+      PageIndex = LastPageInSlab[Index / SlabSize]++;
       // We need to invoke the default constructor on all the elements of the
       // page.
-      std::uninitialized_value_construct_n(NewPagePtr, PageSize);
-
-      PagePtr = NewPagePtr;
+      std::uninitialized_value_construct_n(Slab + (PageIndex*PageSize), PageSize);
     }
+    T* PagePtr = Slab + (PageIndex*PageSize);
     // Dereference the element in the page.
     return PagePtr[Index % PageSize];
   }
@@ -104,7 +133,7 @@ public:
   /// Return the capacity of the vector. I.e. the maximum size it can be
   /// expanded to with the resize method without allocating more pages.
   [[nodiscard]] size_t capacity() const {
-    return PageToDataPtrs.size() * PageSize;
+    return SlabPtrs.size() * PagesInSlab * PageSize;
   }
 
   /// Return the size of the vector. I.e. the maximum index that can be
@@ -127,31 +156,18 @@ public:
       clear();
       return;
     }
-    // Handle shrink case: destroy the elements in the pages that are not
-    // needed anymore and deallocate the pages.
-    //
-    // On the other hand, we do not destroy the extra elements in the last page,
-    // because we might need them later and the logic is simpler if we do not
-    // destroy them. This means that elements are only destroyed only when the
-    // page they belong to is destroyed. This is similar to what happens on
-    // access of the elements of a page, where all the elements of the page are
-    // constructed not only the one effectively neeeded.
-    if (NewSize < Size) {
-      size_t NewLastPage = (NewSize - 1) / PageSize;
-      for (size_t I = NewLastPage + 1, N = PageToDataPtrs.size(); I < N; ++I) {
-        T *PagePtr = PageToDataPtrs[I];
-        if (PagePtr == InvalidPage)
-          continue;
-        T *Page = PagePtr;
-        // We need to invoke the destructor on all the elements of the page.
-        std::destroy_n(Page, PageSize);
-        Allocator.getPointer()->Deallocate(Page);
-        // We mark the page invalid, to avoid double deletion.
-        PageToDataPtrs[I] = InvalidPage;
-      }
-      PageToDataPtrs.resize(NewLastPage + 1);
-    }
+    if (NewSize == Size)
+      return;
+    /// Not supported. If you have the need to shrink, please consider
+    /// using a different data structure.
+    assert(NewSize > Size);
     Size = NewSize;
+
+    // We need to resize the page index in slab vector as well.
+    size_t NewLastPage = (NewSize - 1) / PageSize;
+    assert(NewLastPage + 1 >= PageIndexInSlab.size());
+    PageIndexInSlab.resize(NewLastPage + 1, InvalidPageIndex);
+
     // If the capacity is enough, just update the size and continue
     // with the currently allocated pages. Notice that we do not
     // need to default construct any new element, because that was already done
@@ -161,9 +177,11 @@ public:
     // We use InvalidPage to indicate that a page has not been allocated yet.
     // This cannot be 0, because 0 is a valid page id.
     // We use InvalidPage instead of a separate bool to avoid wasting space.
-    size_t NewLastPage = (NewSize - 1) / PageSize;
-    assert(NewLastPage + 1 > PageToDataPtrs.size());
-    PageToDataPtrs.resize(NewLastPage + 1, InvalidPage);
+    size_t NewLastSlab = (NewSize - 1) / (PagesInSlab * PageSize);
+    assert(NewLastSlab + 1 > SlabPtrs.size());
+    SlabPtrs.resize(NewLastSlab + 1, nullptr);
+    LastPageInSlab.resize(NewLastSlab + 1, 0);
+
   }
 
   [[nodiscard]] bool empty() const { return Size == 0; }
@@ -172,18 +190,23 @@ public:
   /// lookup index and reset the size.
   void clear() {
     Size = 0;
-    for (T *Page : PageToDataPtrs) {
-      if (Page == InvalidPage)
+    for (size_t SI = 0; SI < SlabPtrs.size();  ++SI) { 
+      T *Slab = SlabPtrs[SI];
+      if (Slab == nullptr)
         continue;
-      std::destroy_n(Page, PageSize);
+      // Destroy all the elements of the slab until the last page.
+      std::destroy_n(Slab, LastPageInSlab[SI] * PageSize);
       // If we do not own the allocator, deallocate the pages one by one.
       if (!Allocator.getInt())
-        Allocator.getPointer()->Deallocate(Page);
+        Allocator.getPointer()->Deallocate(Slab);
     }
     // If we own the allocator, simply reset it.
     if (Allocator.getInt() == true)
       Allocator.getPointer()->Reset();
-    PageToDataPtrs.clear();
+
+    SlabPtrs.clear();
+    LastPageInSlab.clear();
+    PageIndexInSlab.clear();
   }
 
   /// Iterator on all the elements of the vector
@@ -210,7 +233,7 @@ public:
       ++ElementIdx;
       if (ElementIdx % PageSize == 0) {
         while (ElementIdx < PV->Size &&
-               PV->PageToDataPtrs[ElementIdx / PageSize] == InvalidPage)
+               PV->PageIndexInSlab[ElementIdx / PageSize] == InvalidPageIndex)
           ElementIdx += PageSize;
         if (ElementIdx > PV->Size)
           ElementIdx = PV->Size;
@@ -232,8 +255,12 @@ public:
     /// such page.
     T const &operator*() const {
       assert(ElementIdx < PV->Size);
-      assert(PV->PageToDataPtrs[ElementIdx / PageSize] != InvalidPage);
-      T *PagePtr = PV->PageToDataPtrs[ElementIdx / PageSize];
+      assert(PV->PageIndexInSlab[ElementIdx / PageSize] != InvalidPageIndex);
+      T *Slab = PV->SlabPtrs[ElementIdx / (PageSize * PagesInSlab)];
+      assert(Slab != nullptr);
+      int8_t PageIndex = PV->PageIndexInSlab[ElementIdx / PageSize];
+      assert(PageIndex != InvalidPageIndex);
+      T* PagePtr = Slab + PageIndex * PageSize;
       return PagePtr[ElementIdx % PageSize];
     }
 
@@ -254,11 +281,11 @@ public:
     // It should not be possible to build two iterators pointing to non
     // materialised elements.
     assert(LHS.ElementIdx >= LHS.PV->Size ||
-           (LHS.ElementIdx / PageSize < LHS.PV->PageToDataPtrs.size() &&
-            LHS.PV->PageToDataPtrs[LHS.ElementIdx / PageSize] != InvalidPage));
+           (LHS.ElementIdx / PageSize < LHS.PV->PageIndexInSlab.size() &&
+            LHS.PV->PageIndexInSlab[LHS.ElementIdx / PageSize] != InvalidPageIndex));
     assert(RHS.ElementIdx >= RHS.PV->Size ||
-           (RHS.ElementIdx / PageSize < RHS.PV->PageToDataPtrs.size() &&
-            RHS.PV->PageToDataPtrs[RHS.ElementIdx / PageSize] != InvalidPage));
+           (RHS.ElementIdx / PageSize < RHS.PV->PageIndexInSlab.size() &&
+            RHS.PV->PageIndexInSlab[RHS.ElementIdx / PageSize] != InvalidPageIndex));
     return LHS.ElementIdx == RHS.ElementIdx;
   }
 
@@ -277,7 +304,7 @@ public:
   MaterialisedIterator materialised_begin() const {
     // Look for the first valid page
     for (size_t ElementIdx = 0; ElementIdx < Size; ElementIdx += PageSize)
-      if (PageToDataPtrs[ElementIdx / PageSize] != InvalidPage)
+      if (PageIndexInSlab[ElementIdx / PageSize] != InvalidPageIndex)
         return MaterialisedIterator(this, ElementIdx);
 
     return MaterialisedIterator(this, Size);
